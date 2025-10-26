@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { presentationsAPI, recordingsAPI } from '@/lib/api';
 
@@ -9,6 +9,12 @@ interface Presentation {
   title: string;
   description: string;
   recordings: Recording[];
+}
+
+interface FillerWord {
+  word: string;
+  position: number;
+  context: string;
 }
 
 interface Recording {
@@ -23,7 +29,7 @@ interface Recording {
   clarity_score: number;
   overall_score: number;
   ai_feedback: string;
-  filler_words_list: any[];
+  filler_words_list: FillerWord[];
   created_at: string;
 }
 
@@ -38,11 +44,8 @@ export default function PresentationPage() {
     null
   );
 
-  useEffect(() => {
-    loadPresentation();
-  }, [presentationId]);
-
-  const loadPresentation = async () => {
+  // Use useCallback to memoize the function and fix the dependency warning
+  const loadPresentation = useCallback(async () => {
     try {
       const response = await presentationsAPI.get(presentationId);
       setPresentation(response.data);
@@ -54,7 +57,11 @@ export default function PresentationPage() {
     } catch (error) {
       console.error('Error loading presentation:', error);
     }
-  };
+  }, [presentationId]);
+
+  useEffect(() => {
+    loadPresentation();
+  }, [loadPresentation]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -166,46 +173,61 @@ export default function PresentationPage() {
                 >
                   {uploading ? 'Analyzing...' : 'Upload & Analyze'}
                 </button>
+
+                {uploading && (
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      Analyzing your presentation... This may take 1-2 minutes.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Recordings List */}
               <div className="mt-8">
                 <h3 className="font-semibold mb-3">Previous Recordings</h3>
-                <div className="space-y-2">
-                  {presentation.recordings.map((rec) => (
-                    <button
-                      key={rec.id}
-                      onClick={() => setSelectedRecording(rec)}
-                      className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${
-                        selectedRecording?.id === rec.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">
-                          {new Date(rec.created_at).toLocaleDateString()}
-                        </span>
-                        <span
-                          className={`text-xs px-2 py-1 rounded ${
-                            rec.status === 'completed'
-                              ? 'bg-green-100 text-green-800'
-                              : rec.status === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {rec.status}
-                        </span>
-                      </div>
-                      {rec.overall_score !== null && (
-                        <div className="text-sm text-gray-600 mt-1">
-                          Score: {rec.overall_score.toFixed(1)}/100
+                {presentation.recordings.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    No recordings yet. Upload your first one!
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {presentation.recordings.map((rec) => (
+                      <button
+                        key={rec.id}
+                        onClick={() => setSelectedRecording(rec)}
+                        className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${
+                          selectedRecording?.id === rec.id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium">
+                            {new Date(rec.created_at).toLocaleDateString()}
+                          </span>
+                          <span
+                            className={`text-xs px-2 py-1 rounded ${
+                              rec.status === 'completed'
+                                ? 'bg-green-100 text-green-800'
+                                : rec.status === 'failed'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {rec.status}
+                          </span>
                         </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
+                        {rec.overall_score !== null && (
+                          <div className="text-sm text-gray-600 mt-1">
+                            Score: {rec.overall_score.toFixed(1)}/100
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -246,7 +268,7 @@ export default function PresentationPage() {
                     />
                     <MetricCard
                       label="Total Words"
-                      value={selectedRecording.total_words}
+                      value={selectedRecording.total_words.toString()}
                     />
                     <MetricCard
                       label="Words/Min"
@@ -254,10 +276,45 @@ export default function PresentationPage() {
                     />
                     <MetricCard
                       label="Filler Words"
-                      value={selectedRecording.filler_word_count}
+                      value={selectedRecording.filler_word_count.toString()}
                     />
                   </div>
                 </div>
+
+                {/* Filler Words Breakdown */}
+                {selectedRecording.filler_words_list.length > 0 && (
+                  <div className="bg-white rounded-lg shadow-md p-6">
+                    <h2 className="text-xl font-semibold mb-4">
+                      Filler Words Detected
+                    </h2>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {selectedRecording.filler_words_list.slice(0, 20).map((filler, index) => (
+                        <div
+                          key={index}
+                          className="p-3 bg-yellow-50 rounded-lg border border-yellow-200"
+                        >
+                          <div className="flex justify-between items-start">
+                                <span className="font-semibold text-yellow-800">
+                                {`"${filler.word}"`}
+                                </span>
+
+                            <span className="text-xs text-gray-500">
+                              Position: {filler.position}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">
+                            ...{filler.context}...
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {selectedRecording.filler_words_list.length > 20 && (
+                      <p className="text-sm text-gray-500 mt-2 text-center">
+                        Showing 20 of {selectedRecording.filler_words_list.length} filler words
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* AI Feedback */}
                 {selectedRecording.ai_feedback && (
@@ -266,7 +323,7 @@ export default function PresentationPage() {
                       🤖 AI Coach Feedback
                     </h2>
                     <div className="prose max-w-none">
-                      <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans">
+                      <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans leading-relaxed">
                         {selectedRecording.ai_feedback}
                       </pre>
                     </div>
@@ -276,17 +333,23 @@ export default function PresentationPage() {
                 {/* Transcription */}
                 {selectedRecording.transcription && (
                   <div className="bg-white rounded-lg shadow-md p-6">
-                    <h2 className="text-xl font-semibold mb-4">Transcription</h2>
-                    <p className="text-gray-700 leading-relaxed">
-                      {selectedRecording.transcription}
-                    </p>
+                    <h2 className="text-xl font-semibold mb-4">Full Transcription</h2>
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-gray-700 leading-relaxed">
+                        {selectedRecording.transcription}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
             ) : (
               <div className="bg-white rounded-lg shadow-md p-12 text-center">
-                <p className="text-gray-500">
+                <div className="text-6xl mb-4">🎤</div>
+                <p className="text-gray-500 text-lg">
                   Upload a recording to see analysis results
+                </p>
+                <p className="text-gray-400 text-sm mt-2">
+                  Your AI coach is ready to help you improve!
                 </p>
               </div>
             )}
@@ -297,15 +360,13 @@ export default function PresentationPage() {
   );
 }
 
-function ScoreCard({
-  label,
-  score,
-  color,
-}: {
+interface ScoreCardProps {
   label: string;
   score: number;
-  color: string;
-}) {
+  color: 'blue' | 'green' | 'purple';
+}
+
+function ScoreCard({ label, score, color }: ScoreCardProps) {
   const colorClasses = {
     blue: 'bg-blue-100 text-blue-800',
     green: 'bg-green-100 text-green-800',
@@ -320,7 +381,12 @@ function ScoreCard({
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: any }) {
+interface MetricCardProps {
+  label: string;
+  value: string;
+}
+
+function MetricCard({ label, value }: MetricCardProps) {
   return (
     <div className="bg-gray-50 rounded-lg p-4">
       <div className="text-2xl font-bold text-gray-900">{value}</div>
