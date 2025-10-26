@@ -1,0 +1,14 @@
+Django==5.0.1
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+python-dotenv==1.0.0
+openai-whisper==20231117
+torch==2.1.2
+torchaudio==2.1.2
+pydub==0.25.1
+librosa==0.10.1
+langchain==0.1.0
+langchain-google-genai==1.0.1
+google-generativeai==0.3.2
+Pillow==10.2.0
+numpy==1.24.3
