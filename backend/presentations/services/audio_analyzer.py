@@ -1,16 +1,14 @@
-import whisper
+from faster_whisper import WhisperModel
 import librosa
 import numpy as np
-from pydub import AudioSegment
 from typing import Dict, List, Tuple
 import re
-import os
 
 
 class AudioAnalyzer:
     """
     Analyzes audio files for transcription, filler words, and pacing.
-    Uses OpenAI Whisper for speech-to-text (completely free, local).
+    Uses faster-whisper for speech-to-text (Python 3.13 compatible).
     """
 
     # Common filler words to detect
@@ -22,11 +20,12 @@ class AudioAnalyzer:
     ]
 
     def __init__(self):
-        """Initialize the audio analyzer with Whisper model."""
+        """Initialize the audio analyzer with faster-whisper model."""
         print("Loading Whisper model... (this may take a moment on first run)")
         # Using 'base' model for balance of speed and accuracy
-        # Options: tiny, base, small, medium, large
-        self.model = whisper.load_model("base")
+        # Options: tiny, base, small, medium, large-v2, large-v3
+        # device="cpu" for CPU, "cuda" for GPU
+        self.model = WhisperModel("base", device="cpu", compute_type="int8")
         print("Whisper model loaded successfully!")
 
     def analyze_audio(self, audio_file_path: str) -> Dict:
@@ -40,14 +39,18 @@ class AudioAnalyzer:
             Dictionary with analysis results
         """
         try:
-            # Step 1: Get audio duration
+            # Step 1: Get audio duration using librosa
             duration = self.get_audio_duration(audio_file_path)
 
-            # Step 2: Transcribe audio using Whisper
+            # Step 2: Transcribe audio using faster-whisper
             print("Transcribing audio...")
-            transcription_result = self.model.transcribe(audio_file_path)
-            transcription = transcription_result['text']
+            segments, info = self.model.transcribe(audio_file_path, beam_size=5)
+            
+            # Combine all segments into full transcription
+            transcription = " ".join([segment.text for segment in segments])
+            
             print(f"Transcription complete! Length: {len(transcription)} characters")
+            print(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
 
             # Step 3: Detect filler words
             filler_words, filler_count = self.detect_filler_words(transcription)
@@ -75,20 +78,28 @@ class AudioAnalyzer:
 
         except Exception as e:
             print(f"Error analyzing audio: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'error': str(e)
             }
 
     def get_audio_duration(self, audio_file_path: str) -> float:
-        """Get duration of audio file in seconds."""
+        """
+        Get duration of audio file in seconds using librosa.
+        No FFmpeg required for most formats!
+        """
         try:
-            audio = AudioSegment.from_file(audio_file_path)
-            return len(audio) / 1000.0  # Convert milliseconds to seconds
-        except:
-            # Fallback to librosa if pydub fails
+            print(f"Loading audio file: {audio_file_path}")
             y, sr = librosa.load(audio_file_path, sr=None)
-            return librosa.get_duration(y=y, sr=sr)
+            duration = librosa.get_duration(y=y, sr=sr)
+            print(f"Audio duration: {duration:.2f} seconds")
+            return duration
+        except Exception as e:
+            print(f"Error getting duration with librosa: {str(e)}")
+            # If librosa fails, return 0 and let Whisper handle it
+            return 0.0
 
     def detect_filler_words(self, transcription: str) -> Tuple[List[Dict], int]:
         """
