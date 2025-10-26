@@ -9,6 +9,8 @@ Transform your presentations with real-time analysis, personalized coaching, gam
 ![Django](https://img.shields.io/badge/Django-5.0-green)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
 
+Youtube Video: https://youtu.be/GxdjJFgtiBk
+
 ---
 
 ## 📋 Table of Contents
